@@ -108,13 +108,6 @@
             <Back />
           </el-icon>
         </button>
-
-        <!-- 返回主站门户 -->
-        <a :href="portalUrl" class="tool-btn icon-only" title="返回统一门户主站">
-          <el-icon>
-            <HomeFilled />
-          </el-icon>
-        </a>
       </div>
     </header>
 
@@ -218,7 +211,6 @@ import { vrApi } from '@/api/vr'
 
 const route = useRoute()
 const router = useRouter()
-const portalUrl = import.meta.env.VITE_PORTAL_URL || 'https://gentingincubus.com'
 
 // DOM 引用
 const containerRef = ref(null)

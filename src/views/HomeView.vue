@@ -26,14 +26,8 @@
               <div class="navbar transition" :style="{ width: navbarWidth + 'px', left: navbarLeft + 'px' }"></div>
             </div>
 
-            <!-- 🌟 顶部右上角：返回主门户与全景漫游入口 -->
+            <!-- 🌟 顶部右上角：全景漫游入口 -->
             <div class="capsule-wrap">
-              <a :href="portalUrl" class="capsule-btn portal-mode" title="返回 Genting Incubus 统一门户主站">
-                <el-icon :size="14">
-                  <HomeFilled />
-                </el-icon>
-                <span class="capsule-text">返回主站</span>
-              </a>
               <div class="capsule-btn vr-mode" title="进入 720° VR 全景漫游" @click="enterVrDirectly">
                 <el-icon :size="14">
                   <Compass />
@@ -167,12 +161,11 @@
 import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, ArrowRight, Refresh, HomeFilled, Compass, Position } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Refresh, Compass, Position } from '@element-plus/icons-vue'
 import { carouselApi } from '@/api/carousel'
 import ParseText from '@/components/md-editor-v3/parseText.vue'
 
 const router = useRouter()
-const portalUrl = import.meta.env.VITE_PORTAL_URL || 'http://localhost:5173'
 
 const navIndex = ref(0)
 const navbarWidth = ref(0)
