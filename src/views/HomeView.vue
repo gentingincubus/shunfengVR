@@ -29,11 +29,15 @@
             <!-- 🌟 顶部右上角：返回主门户与全景漫游入口 -->
             <div class="capsule-wrap">
               <a :href="portalUrl" class="capsule-btn portal-mode" title="返回 Genting Incubus 统一门户主站">
-                <el-icon :size="14"><HomeFilled /></el-icon>
+                <el-icon :size="14">
+                  <HomeFilled />
+                </el-icon>
                 <span class="capsule-text">返回主站</span>
               </a>
               <div class="capsule-btn vr-mode" title="进入 720° VR 全景漫游" @click="enterVrDirectly">
-                <el-icon :size="14"><Compass /></el-icon>
+                <el-icon :size="14">
+                  <Compass />
+                </el-icon>
                 <span class="capsule-text">全景漫游</span>
               </div>
             </div>
@@ -54,7 +58,9 @@
               亮点巡礼
             </div>
             <div class="enterVrDirectBtn" @click="enterVrDirectly">
-              <el-icon><Compass /></el-icon>
+              <el-icon>
+                <Compass />
+              </el-icon>
               <span>进入全景漫游</span>
             </div>
           </div>
@@ -75,24 +81,16 @@
           </div>
 
           <!-- 3D 轮播舞台 (屏幕 80% 黄金视口边界) -->
-          <div class="carousel-3d-stage" :style="{ width: stageMaxBound.width + 'px', height: stageMaxBound.height + 'px' }">
+          <div class="carousel-3d-stage"
+            :style="{ width: stageMaxBound.width + 'px', height: stageMaxBound.height + 'px' }">
             <!-- 轮播卡片群 (当前清晰，前后 N 张梯级虚化) -->
-            <div
-              v-for="(item, index) in carouselList"
-              :key="item.id"
-              class="carousel-card-item"
-              :style="getCardStyle(index)"
-              @click="handleCardClick(index)"
-            >
+            <div v-for="(item, index) in carouselList" :key="item.id" class="carousel-card-item"
+              :style="getCardStyle(index)" @click="handleCardClick(index)">
               <div class="card-flipper" :class="{ 'is-flipped': isFlipped && getCardOffset(index) === 0 }">
                 <!-- 正面：封面海报 + 标题 + 提示 -->
                 <div class="card-face card-front">
-                  <img
-                    :src="item.coverUrl"
-                    class="card-img"
-                    draggable="false"
-                    @load="handleImageLoad(item.id, $event)"
-                  />
+                  <img :src="item.coverUrl" class="card-img" draggable="false"
+                    @load="handleImageLoad(item.id, $event)" />
                   <div class="card-front-glass-overlay">
                     <div class="card-top-tag">
                       <span class="pulse-point"></span>
@@ -103,7 +101,9 @@
                       <p v-if="item.subtitle" class="card-sub-title">{{ item.subtitle }}</p>
                     </div>
                     <div class="flip-hint-badge">
-                      <el-icon><Refresh /></el-icon>
+                      <el-icon>
+                        <Refresh />
+                      </el-icon>
                       <span>点击翻转卡片</span>
                     </div>
                   </div>
@@ -117,7 +117,9 @@
                       <span class="back-title-text">{{ item.title }}</span>
                     </div>
                     <button class="back-return-btn" @click.stop="isFlipped = false">
-                      <el-icon><ArrowLeft /></el-icon>
+                      <el-icon>
+                        <ArrowLeft />
+                      </el-icon>
                       <span>返回正面</span>
                     </button>
                   </div>
@@ -130,22 +132,21 @@
 
             <!-- 左右切换箭头按钮 (仅在多张卡片时显示) -->
             <button v-if="carouselList.length > 1" class="carousel-arrow prev-arrow" @click.stop="prevCard" title="上一张">
-              <el-icon :size="22"><ArrowLeft /></el-icon>
+              <el-icon :size="22">
+                <ArrowLeft />
+              </el-icon>
             </button>
             <button v-if="carouselList.length > 1" class="carousel-arrow next-arrow" @click.stop="nextCard" title="下一张">
-              <el-icon :size="22"><ArrowRight /></el-icon>
+              <el-icon :size="22">
+                <ArrowRight />
+              </el-icon>
             </button>
           </div>
 
           <!-- 底部圆点指示器 -->
           <div v-if="carouselList.length > 1" class="carousel-indicators">
-            <span
-              v-for="(item, index) in carouselList"
-              :key="'ind-' + item.id"
-              class="indicator-dot"
-              :class="{ active: index === currentIndex }"
-              @click.stop="goToCard(index)"
-            />
+            <span v-for="(item, index) in carouselList" :key="'ind-' + item.id" class="indicator-dot"
+              :class="{ active: index === currentIndex }" @click.stop="goToCard(index)" />
           </div>
         </div>
       </div>
@@ -189,30 +190,6 @@ function enterVrDirectly() {
 // ==========================================
 // 首页第二页：3D 毛玻璃自适应翻转轮播
 // ==========================================
-const defaultCarouselItems = [
-  {
-    id: 6001,
-    title: '顺峰山公园 · 中华第一牌坊',
-    subtitle: '顺德之门，气势磅礴的岭南建筑丰碑',
-    coverUrl: 'https://1967.oss-cn-guangzhou.aliyuncs.com/image/VR/leftMap/fuboqiao/yasuo.jpg',
-    content: `# 顺峰山公园 · 中华第一牌坊\n\n> 顺峰山牌坊享有“**中华第一牌坊**”之美誉，坐落于顺德大良顺峰山公园入口处，体量恢宏，气度万千。\n\n---\n\n### 🏛️ 建筑特色与艺术构造\n- **三跨拱券结构**：主跨雄阔，翼跨对称，整座牌坊高 38 米，宽 88 米，气势磅礴。\n- **石雕与彩绘**：融入了大量岭南传统石雕艺术，雕刻有龙凤呈祥、百鸟朝凤等生动图案。\n- **琉璃覆顶**：金黄色琉璃瓦在阳光照耀下熠熠生辉，与青云湖水倒影交相辉映。\n\n### 🌿 漫游体验推荐\n1. **晨曦初照**：清晨登临牌坊广场，朝霞映照金顶，是绝佳摄影打卡机位。\n2. **全景漫步**：从牌坊向内步入，沿着青云湖环湖绿道漫步，微风徐来，心旷神怡。`
-  },
-  {
-    id: 6002,
-    title: '青云塔与桂畔湖 · 湖光塔影',
-    subtitle: '凌霄矗立，俯瞰顺德秀美山河',
-    coverUrl: 'https://1967.oss-cn-guangzhou.aliyuncs.com/image/VR/leftMap/mideaSquare/yasuo.jpg',
-    content: `# 青云塔与桂畔湖 · 湖光塔影\n\n> 青云塔耸立于神步山巅，始建于明代万历年间，为顺德八景之一“**青云挺秀**”。\n\n---\n\n### ✨ 胜景特色\n- **八角七层阁楼式**：砖石垒砌，古朴雄浑，历经数百年风雨依然傲立。\n- **湖光相映**：桂畔湖碧波荡漾，与青云古塔在碧水微澜中形成“双塔映波”的经典画卷。\n- **自然生机**：湖畔红杉挺立，白鹭翔集，是顺峰山最具生态韵味的湿地核心区。\n\n> 💡 *小提示：支持通过顶部 VR 漫游系统直达青云塔下俯瞰全景。*`
-  },
-  {
-    id: 6003,
-    title: '顺峰山龙舟汇 · 水上文化方舟',
-    subtitle: '现代建筑与非遗传承的水上交响',
-    coverUrl: 'https://1967.oss-cn-guangzhou.aliyuncs.com/image/VR/dragonBoat/rukou/yasuo.jpg',
-    content: `# 顺峰山龙舟汇 · 水上文化方舟\n\n> 由清华大学建筑设计团队操刀打造，宛若一艘巨型龙舟静卧于莫家桥畔湖水之上。\n\n---\n\n### 🚣‍♂️ 场馆亮点\n- **水上方舟造型**：全钢构架与现代木纹外立面相得益彰，犹如漂浮在湖面的传统龙舟。\n- **多维互动展区**：馆内集中陈列顺德五人龙舟、传统龙首雕刻与国际锦标赛奖杯。\n- **全景沉浸漫游**：支持通过本站 720° VR 全景系统穿梭于龙舟汇中庭与屋顶观景平台。`
-  }
-]
-
 const carouselList = ref([])
 const currentIndex = ref(0)
 const isFlipped = ref(false)
@@ -358,10 +335,10 @@ async function loadCarouselList() {
     if (res && res.data && res.data.length > 0) {
       carouselList.value = res.data
     } else {
-      carouselList.value = defaultCarouselItems
+      carouselList.value = []
     }
   } catch (err) {
-    carouselList.value = defaultCarouselItems
+    carouselList.value = []
   }
 }
 
@@ -690,10 +667,10 @@ onUnmounted(() => {
   top: 50%;
   transform-origin: center center;
   transition: transform 0.6s cubic-bezier(0.25, 1, 0.5, 1),
-              filter 0.6s ease,
-              opacity 0.6s ease,
-              width 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
-              height 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+    filter 0.6s ease,
+    opacity 0.6s ease,
+    width 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
+    height 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
   will-change: transform, filter, opacity, width, height;
 }
 
