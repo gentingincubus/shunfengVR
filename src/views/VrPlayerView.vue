@@ -161,9 +161,11 @@
             <div v-for="scene in sceneList" :key="scene.id" class="map-pin"
               :class="{ 'is-current': currentScene?.id === scene.id }"
               :style="{ left: scene.leftPercent + '%', top: scene.topPercent + '%' }" @click.stop="switchScene(scene)">
-              <!-- 当前选中场景的实时视角导向锥形雷达 -->
+              <!-- 临时停用：当前选中场景的实时视角导向锥形雷达（待后期后台全景可视化精灵图标注/场景跳转功能时再启用） -->
+              <!--
               <div v-if="currentScene?.id === scene.id" class="radar-sector"
                 :style="{ transform: `translate(-50%, -50%) rotate(${cameraHeading}deg)` }" />
+              -->
 
               <!-- 图钉主体 -->
               <div class="pin-marker-dot">
@@ -243,6 +245,7 @@
   import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
   import * as TWEEN from '@tweenjs/tween.js'
   import { vrApi } from '@/api/vr'
+  import { createNadirPatchMesh } from '@/utils/nadirPatch'
 
   const route = useRoute()
   const router = useRouter()
@@ -285,12 +288,13 @@
   let textureLoader = null
   let animFrameId = null
   let currentSphere = null
+  let nadirMesh = null
   let bgmAudio = null
   let isTransitioning = false
 
   // 当前选中的分类计算属性
   const currentCategory = computed(() => {
-    return categoryList.value.find(c => c.id === currentCategoryId.value) || null
+    return categoryList.value.find(c => String(c.id) === String(currentCategoryId.value)) || null
   })
 
   // ==========================================
@@ -417,6 +421,9 @@
       introOpeningAnimation(initialScene.initialDeg || 0)
     })
 
+    // 🌟 装配地面补地遮罩（遮盖三脚架穿帮）
+    setupNadirPatch()
+
     // 7. 启动渲染循环
     animate()
 
@@ -455,6 +462,62 @@
         loading.value = false
       }
     )
+  }
+
+  // 🌟 装配/更新全景球脚底补地遮罩 (支持园区全局配置与场景个别覆盖)
+  function setupNadirPatch() {
+    if (!scene) return
+    if (nadirMesh) {
+      scene.remove(nadirMesh)
+      nadirMesh.geometry.dispose()
+      if (nadirMesh.material.map) nadirMesh.material.map.dispose()
+      nadirMesh.material.dispose()
+      nadirMesh = null
+    }
+
+    // 优先读取场景私有配置，未配置时继承园区全局配置，最后使用默认值
+    function parseCfg(raw) {
+      if (!raw) return {}
+      if (typeof raw === 'object') return raw
+      try {
+        return JSON.parse(raw)
+      } catch (e) {
+        return {}
+      }
+    }
+
+    const sceneCfg = parseCfg(currentScene.value?.nadirConfig)
+    const categoryCfg = parseCfg(currentCategory.value?.nadirConfig)
+
+    // 如果场景明确禁用补地 (nadirEnabled === 0 或 false)
+    if (sceneCfg.nadirEnabled === 0 || sceneCfg.nadirEnabled === false) {
+      return
+    }
+
+    const type = sceneCfg.type || categoryCfg.type || 'stamp'
+    const text = sceneCfg.nadirText || categoryCfg.nadirText || 'genting拍摄'
+    const subText = sceneCfg.nadirSubText || categoryCfg.nadirSubText || '720° SPATIAL PANORAMA'
+    const centerText = sceneCfg.nadirCenterText || categoryCfg.nadirCenterText || '720°'
+    const bgColor = sceneCfg.nadirBgColor || categoryCfg.nadirBgColor || 'rgba(11, 19, 41, 0.90)'
+    const textColor = sceneCfg.nadirTextColor || categoryCfg.nadirTextColor || '#38bdf8'
+    const borderColor = sceneCfg.nadirBorderColor || categoryCfg.nadirBorderColor || '#38bdf8'
+    const imageUrl = sceneCfg.nadirImageUrl || categoryCfg.nadirImageUrl || null
+
+    // 半径大小：默认半径扩大到 16（三脚架大支撑完全覆盖），并支持动态配置
+    const patchRadius = Number(sceneCfg.nadirRadius || categoryCfg.nadirRadius || 16)
+
+    nadirMesh = createNadirPatchMesh({
+      type,
+      text,
+      subText,
+      centerText,
+      bgColor,
+      textColor,
+      borderColor,
+      imageUrl
+    }, 40, patchRadius)
+
+    scene.add(nadirMesh)
   }
 
   // 开场俯冲动画：从小行星视角平滑俯冲进入（还原顺峰山经典开场俯冲）
@@ -566,6 +629,8 @@
 
             currentSphere = nextSphere
             isTransitioning = false
+            // 🌟 场景切换完成，更新当前场景的脚底补地遮罩
+            setupNadirPatch()
           })
           .start()
       },
@@ -753,6 +818,15 @@
         currentSphere.material.map.dispose()
       }
       currentSphere.material.dispose()
+    }
+
+    if (nadirMesh) {
+      nadirMesh.geometry.dispose()
+      if (nadirMesh.material.map) {
+        nadirMesh.material.map.dispose()
+      }
+      nadirMesh.material.dispose()
+      nadirMesh = null
     }
 
     if (renderer) {

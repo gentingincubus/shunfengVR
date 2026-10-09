@@ -6,11 +6,8 @@
         :class="isHeadTop ? 'headContainer_active' : 'headContainer_hidden'">
         <div class="head transition">
           <div class="head-left flexRowAlign">
-            <div v-if="isHeadTop" class="editorText transition">MADE BY GENTING</div>
-            <div v-else class="editorText transition">顺峰山VR</div>
+            <div class="editorText transition">顺峰山VR</div>
           </div>
-
-          <img src="@/assets/img/head.png" class="portrait transition" alt="avatar" />
 
           <!-- 右侧导航 + 胶囊入口容器 -->
           <div class="head-right flexRowAlign">
@@ -1138,13 +1135,6 @@ onUnmounted(() => {
   letter-spacing: 1px;
 }
 
-/* 中间头像 */
-.headContainer .head .portrait {
-  position: absolute;
-  inset: 0;
-  margin: auto;
-  flex-shrink: 1;
-}
 
 .head-right {
   display: flex;
@@ -1237,11 +1227,8 @@ onUnmounted(() => {
 
 .headContainer_active .head .editorText {
   color: white;
-}
-
-.headContainer_active .head .portrait {
-  width: 70px;
-  height: 70px;
+  font-size: calc(var(--rem) * 0.55);
+  font-weight: 700;
 }
 
 .headContainer_active .head .navBtn {
@@ -1261,13 +1248,8 @@ onUnmounted(() => {
 
 .headContainer_hidden .head .editorText {
   color: #0f172a;
-  font-size: 22px;
-}
-
-.headContainer_hidden .head .portrait {
-  width: 0px;
-  height: 0px;
-  opacity: 0;
+  font-size: 20px;
+  font-weight: 700;
 }
 
 .headContainer_hidden .head .navBtn {
