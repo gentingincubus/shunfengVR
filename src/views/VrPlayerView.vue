@@ -291,6 +291,7 @@
   let nadirMesh = null
   let bgmAudio = null
   let isTransitioning = false
+  let currentLoadToken = 0
 
   // 当前选中的分类计算属性
   const currentCategory = computed(() => {
@@ -413,9 +414,9 @@
     // 5. 纹理加载管理器
     textureLoader = new THREE.TextureLoader()
 
-    // 6. 首个场景全景球体装配
+    // 6. 首个场景全景球体装配 (双阶段渐进式: 低清秒开 -> 高清静默升格)
     currentScene.value = initialScene
-    loadSphereMesh(initialScene.panoramaUrl, () => {
+    loadSphereMesh(initialScene, () => {
       loading.value = false
       // 触发经典的开场飞入动效（从俯视小行星逐渐俯冲至正常视界）
       introOpeningAnimation(initialScene.initialDeg || 0)
@@ -431,21 +432,30 @@
     window.addEventListener('resize', onWindowResize)
   }
 
-  // 装配球体全景网格（反转法线，让相机在球体内部往外看）
-  function loadSphereMesh(url, onLoadCallback) {
+  // 装配球体全景网格 (渐进式 LQIP: 先秒开低清底图解除等待，再静默升格高清)
+  function loadSphereMesh(targetScene, onLoadCallback) {
+    const token = ++currentLoadToken
+    const hasLowRes = Boolean(targetScene.lowResUrl)
+    const initialUrl = hasLowRes ? targetScene.lowResUrl : targetScene.panoramaUrl
+
     textureLoader.load(
-      url,
-      (texture) => {
-        texture.colorSpace = THREE.SRGBColorSpace
-        texture.minFilter = THREE.LinearFilter
-        texture.generateMipmaps = false // 全景等距柱状图关闭 mipmap 大幅缩减显存占用
+      initialUrl,
+      (initialTexture) => {
+        if (currentLoadToken !== token) {
+          initialTexture.dispose()
+          return
+        }
+
+        initialTexture.colorSpace = THREE.SRGBColorSpace
+        initialTexture.minFilter = THREE.LinearFilter
+        initialTexture.generateMipmaps = false // 全景等距柱状图关闭 mipmap 大幅缩减显存占用
 
         // 创建内径 40 的高细分球面
         const geometry = new THREE.SphereGeometry(40, 64, 40)
         geometry.scale(1, 1, -1) // 反向贴图
 
         const material = new THREE.MeshBasicMaterial({
-          map: texture,
+          map: initialTexture,
           transparent: true,
           opacity: 1
         })
@@ -454,7 +464,35 @@
         scene.add(mesh)
         currentSphere = mesh
 
+        // 🌟 第一阶段完成：秒开贴图就绪，立即解除 loading 遮罩并启动开场飞入动效
         if (onLoadCallback) onLoadCallback()
+
+        // 🌟 第二阶段：若存在低清图，静默拉取高清原图并在当前网格无缝替换贴图
+        if (hasLowRes) {
+          textureLoader.load(
+            targetScene.panoramaUrl,
+            (highResTexture) => {
+              if (currentLoadToken !== token) {
+                highResTexture.dispose()
+                return
+              }
+              highResTexture.colorSpace = THREE.SRGBColorSpace
+              highResTexture.minFilter = THREE.LinearFilter
+              highResTexture.generateMipmaps = false
+
+              if (currentSphere && currentSphere.material) {
+                const lowTex = currentSphere.material.map
+                currentSphere.material.map = highResTexture
+                currentSphere.material.needsUpdate = true
+                if (lowTex) lowTex.dispose()
+              }
+            },
+            undefined,
+            (err) => {
+              console.warn('首屏高清贴图后台升格失败，保持低清展示:', err)
+            }
+          )
+        }
       },
       undefined,
       (err) => {
@@ -557,7 +595,7 @@
   }
 
   // ==========================================
-  // 3. 显存泄露防御型场景切换 (Cross-Fade 交叉平滑淡入淡出)
+  // 3. 显存泄露防御型场景切换 (渐进式秒开 Cross-Fade + 高清平滑升格)
   // ==========================================
   function switchScene(sceneItem) {
     if (!sceneItem) {
@@ -578,20 +616,29 @@
     sceneSwitching.value = true
     currentScene.value = sceneItem
 
-    // 1. 加载新场景贴图
+    const token = ++currentLoadToken
+    const hasLowRes = Boolean(sceneItem.lowResUrl)
+    const initialUrl = hasLowRes ? sceneItem.lowResUrl : sceneItem.panoramaUrl
+
+    // 1. 优先加载低清秒开贴图 (约 30KB, 仅需 0.05s)
     textureLoader.load(
-      sceneItem.panoramaUrl,
-      (newTexture) => {
-        newTexture.colorSpace = THREE.SRGBColorSpace
-        newTexture.minFilter = THREE.LinearFilter
-        newTexture.generateMipmaps = false
+      initialUrl,
+      (initialTexture) => {
+        if (currentLoadToken !== token) {
+          initialTexture.dispose()
+          return
+        }
+
+        initialTexture.colorSpace = THREE.SRGBColorSpace
+        initialTexture.minFilter = THREE.LinearFilter
+        initialTexture.generateMipmaps = false
 
         // 2. 构建新球体，初始透明度为 0
         const geometry = new THREE.SphereGeometry(40, 64, 40)
         geometry.scale(1, 1, -1)
 
         const newMaterial = new THREE.MeshBasicMaterial({
-          map: newTexture,
+          map: initialTexture,
           transparent: true,
           opacity: 0
         })
@@ -601,14 +648,14 @@
 
         const oldSphere = currentSphere
 
-        // 🌟 新场景贴图加载完毕，关闭 loading 与切换遮罩
+        // 🌟 新场景秒开贴图就绪，立即关闭 loading 与切换遮罩！
         loading.value = false
         sceneSwitching.value = false
 
-        // 3. 利用 TWEEN 执行双球透明度交叉渐变
+        // 3. 利用 TWEEN 执行双球透明度交叉渐变 (Cross-Fade)
         const fadeObj = { opacity: 0 }
         new TWEEN.Tween(fadeObj)
-          .to({ opacity: 1 }, 1200)
+          .to({ opacity: 1 }, 1000)
           .easing(TWEEN.Easing.Quadratic.InOut)
           .onUpdate(() => {
             newMaterial.opacity = fadeObj.opacity
@@ -633,6 +680,34 @@
             setupNadirPatch()
           })
           .start()
+
+        // 🌟 阶段 2：若存在低清图，后台异步静默加载 2.9MB 高清原图无缝热替换
+        if (hasLowRes) {
+          textureLoader.load(
+            sceneItem.panoramaUrl,
+            (highResTexture) => {
+              if (currentLoadToken !== token) {
+                highResTexture.dispose()
+                return
+              }
+              highResTexture.colorSpace = THREE.SRGBColorSpace
+              highResTexture.minFilter = THREE.LinearFilter
+              highResTexture.generateMipmaps = false
+
+              // 无缝升级新球体贴图
+              if (nextSphere && nextSphere.material) {
+                const lowTex = nextSphere.material.map
+                nextSphere.material.map = highResTexture
+                nextSphere.material.needsUpdate = true
+                if (lowTex) lowTex.dispose()
+              }
+            },
+            undefined,
+            (err) => {
+              console.warn('切换场景高清贴图后台升格失败，保持低清展示:', err)
+            }
+          )
+        }
       },
       undefined,
       (err) => {
