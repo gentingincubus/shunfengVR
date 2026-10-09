@@ -297,6 +297,7 @@ let currentSphere = null
 let nadirMesh = null
 let bgmAudio = null
 let isTransitioning = false
+let currentLoadToken = 0
 
 // 触控判定变量
 let touchStartTime = 0
@@ -474,7 +475,7 @@ function setupNadirPatch() {
 }
 
 // ==========================================
-// 3. 场景平滑过渡切换
+// 3. 场景平滑过渡切换 (渐进式秒开 Cross-Fade + 高清平滑升格)
 // ==========================================
 function switchScene(targetScene, isInitial = false) {
   if (!targetScene || !targetScene.panoramaUrl) return
@@ -490,9 +491,19 @@ function switchScene(targetScene, isInitial = false) {
 
   currentScene.value = targetScene
 
+  const token = ++currentLoadToken
+  const hasLowRes = Boolean(targetScene.lowResUrl)
+  const initialUrl = hasLowRes ? targetScene.lowResUrl : targetScene.panoramaUrl
+
+  // 1. 优先加载低清秒开贴图 (约 30KB, 仅需数十毫秒)
   textureLoader.load(
-    targetScene.panoramaUrl,
+    initialUrl,
     (texture) => {
+      if (currentLoadToken !== token) {
+        texture.dispose()
+        return
+      }
+
       texture.colorSpace = THREE.SRGBColorSpace
       texture.minFilter = THREE.LinearFilter
 
@@ -512,38 +523,64 @@ function switchScene(targetScene, isInitial = false) {
         currentSphere = nextSphere
         isTransitioning = false
         loading.value = false
-        return
+      } else {
+        const oldSphere = currentSphere
+        loading.value = false
+        sceneSwitching.value = false
+
+        const fadeObj = { opacity: 0 }
+        new TWEEN.Tween(fadeObj)
+          .to({ opacity: 1 }, 1000)
+          .easing(TWEEN.Easing.Quadratic.InOut)
+          .onUpdate(() => {
+            newMaterial.opacity = fadeObj.opacity
+            if (oldSphere) {
+              oldSphere.material.opacity = 1 - fadeObj.opacity
+            }
+          })
+          .onComplete(() => {
+            if (oldSphere) {
+              scene.remove(oldSphere)
+              oldSphere.geometry.dispose()
+              if (oldSphere.material.map) {
+                oldSphere.material.map.dispose()
+              }
+              oldSphere.material.dispose()
+            }
+            currentSphere = nextSphere
+            isTransitioning = false
+            // 🌟 场景切换完成，更新当前场景的脚底补地遮罩
+            setupNadirPatch()
+          })
+          .start()
       }
 
-      const oldSphere = currentSphere
-      loading.value = false
-      sceneSwitching.value = false
-
-      const fadeObj = { opacity: 0 }
-      new TWEEN.Tween(fadeObj)
-        .to({ opacity: 1 }, 1000)
-        .easing(TWEEN.Easing.Quadratic.InOut)
-        .onUpdate(() => {
-          newMaterial.opacity = fadeObj.opacity
-          if (oldSphere) {
-            oldSphere.material.opacity = 1 - fadeObj.opacity
-          }
-        })
-        .onComplete(() => {
-          if (oldSphere) {
-            scene.remove(oldSphere)
-            oldSphere.geometry.dispose()
-            if (oldSphere.material.map) {
-              oldSphere.material.map.dispose()
+      // 🌟 阶段 2：若存在低清图，后台异步静默加载 2.9MB 高清原图无缝热替换
+      if (hasLowRes) {
+        textureLoader.load(
+          targetScene.panoramaUrl,
+          (highResTexture) => {
+            if (currentLoadToken !== token) {
+              highResTexture.dispose()
+              return
             }
-            oldSphere.material.dispose()
+            highResTexture.colorSpace = THREE.SRGBColorSpace
+            highResTexture.minFilter = THREE.LinearFilter
+
+            // 无缝升级球体贴图
+            if (nextSphere && nextSphere.material) {
+              const lowTex = nextSphere.material.map
+              nextSphere.material.map = highResTexture
+              nextSphere.material.needsUpdate = true
+              if (lowTex) lowTex.dispose()
+            }
+          },
+          undefined,
+          (err) => {
+            console.warn('移动端高清贴图后台升格失败，保持低清展示:', err)
           }
-          currentSphere = nextSphere
-          isTransitioning = false
-          // 🌟 场景切换完成，更新当前场景的脚底补地遮罩
-          setupNadirPatch()
-        })
-        .start()
+        )
+      }
     },
     undefined,
     (err) => {
