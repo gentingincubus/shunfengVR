@@ -179,12 +179,14 @@
                 :style="{ left: scene.leftPercent + '%', top: scene.topPercent + '%' }"
                 @click.stop="handleMapPinClick(scene)"
               >
-                <!-- 导向雷达扇形锥 -->
+                <!-- 临时停用：导向雷达扇形锥（待后期后台全景可视化精灵图标注/场景跳转功能时再启用） -->
+                <!--
                 <div
                   v-if="currentScene?.id === scene.id"
                   class="m-radar-sector"
                   :style="{ transform: `translate(-50%, -50%) rotate(${cameraHeading}deg)` }"
                 />
+                -->
                 <span class="m-dot-circle" />
                 <span class="m-pin-name">{{ scene.name }}</span>
               </div>
@@ -238,6 +240,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import * as TWEEN from '@tweenjs/tween.js'
 import { vrApi } from '@/api/vr'
+import { createNadirPatchMesh } from '@/utils/nadirPatch'
 import {
   Headset,
   MapLocation,
@@ -291,6 +294,7 @@ let controls = null
 let textureLoader = null
 let animFrameId = null
 let currentSphere = null
+let nadirMesh = null
 let bgmAudio = null
 let isTransitioning = false
 
@@ -299,7 +303,7 @@ let touchStartTime = 0
 let touchStartPoint = { x: 0, y: 0 }
 
 const currentCategory = computed(() => {
-  return categoryList.value.find(c => c.id === currentCategoryId.value) || null
+  return categoryList.value.find(c => String(c.id) === String(currentCategoryId.value)) || null
 })
 
 // ==========================================
@@ -409,7 +413,64 @@ function initThree(initialScene) {
   window.addEventListener('resize', onWindowResize)
 
   switchScene(initialScene, true)
+  setupNadirPatch()
   animate()
+}
+
+// 🌟 装配/更新移动端全景球脚底补地遮罩 (支持园区全局配置与场景个别覆盖)
+function setupNadirPatch() {
+  if (!scene) return
+  if (nadirMesh) {
+    scene.remove(nadirMesh)
+    nadirMesh.geometry.dispose()
+    if (nadirMesh.material.map) nadirMesh.material.map.dispose()
+    nadirMesh.material.dispose()
+    nadirMesh = null
+  }
+
+  // 优先读取场景私有配置，未配置时继承园区全局配置，最后使用默认值
+  function parseCfg(raw) {
+    if (!raw) return {}
+    if (typeof raw === 'object') return raw
+    try {
+      return JSON.parse(raw)
+    } catch (e) {
+      return {}
+    }
+  }
+
+  const sceneCfg = parseCfg(currentScene.value?.nadirConfig)
+  const categoryCfg = parseCfg(currentCategory.value?.nadirConfig)
+
+  // 如果场景明确禁用补地 (nadirEnabled === 0 或 false)
+  if (sceneCfg.nadirEnabled === 0 || sceneCfg.nadirEnabled === false) {
+    return
+  }
+
+  const type = sceneCfg.type || categoryCfg.type || 'stamp'
+  const text = sceneCfg.nadirText || categoryCfg.nadirText || 'genting拍摄'
+  const subText = sceneCfg.nadirSubText || categoryCfg.nadirSubText || '720° SPATIAL PANORAMA'
+  const centerText = sceneCfg.nadirCenterText || categoryCfg.nadirCenterText || '720°'
+  const bgColor = sceneCfg.nadirBgColor || categoryCfg.nadirBgColor || 'rgba(11, 19, 41, 0.90)'
+  const textColor = sceneCfg.nadirTextColor || categoryCfg.nadirTextColor || '#38bdf8'
+  const borderColor = sceneCfg.nadirBorderColor || categoryCfg.nadirBorderColor || '#38bdf8'
+  const imageUrl = sceneCfg.nadirImageUrl || categoryCfg.nadirImageUrl || null
+
+  // 移动端全景球半径为 50，默认补地遮罩圆盘半径扩大到 18（彻底遮严实三脚架），并支持动态配置
+  const patchRadius = Number(sceneCfg.nadirRadius || categoryCfg.nadirRadius || 18)
+
+  nadirMesh = createNadirPatchMesh({
+    type,
+    text,
+    subText,
+    centerText,
+    bgColor,
+    textColor,
+    borderColor,
+    imageUrl
+  }, 50, patchRadius)
+
+  scene.add(nadirMesh)
 }
 
 // ==========================================
@@ -479,6 +540,8 @@ function switchScene(targetScene, isInitial = false) {
           }
           currentSphere = nextSphere
           isTransitioning = false
+          // 🌟 场景切换完成，更新当前场景的脚底补地遮罩
+          setupNadirPatch()
         })
         .start()
     },
@@ -651,6 +714,15 @@ onBeforeUnmount(() => {
     currentSphere.material.dispose()
   }
 
+  if (nadirMesh) {
+    nadirMesh.geometry.dispose()
+    if (nadirMesh.material.map) {
+      nadirMesh.material.map.dispose()
+    }
+    nadirMesh.material.dispose()
+    nadirMesh = null
+  }
+
   if (renderer) {
     renderer.dispose()
     if (renderer.domElement && renderer.domElement.parentNode) {
@@ -671,6 +743,7 @@ onBeforeUnmount(() => {
   inset: 0;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background: #000;
   user-select: none;
@@ -878,7 +951,7 @@ onBeforeUnmount(() => {
 .m-bottom-left-trigger {
   position: absolute;
   left: 14px;
-  bottom: 24px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
   z-index: 30;
 }
 
@@ -915,7 +988,7 @@ onBeforeUnmount(() => {
   border-top: 1px solid rgba(255, 255, 255, 0.15);
   border-top-left-radius: 20px;
   border-top-right-radius: 20px;
-  padding: 12px 14px 24px;
+  padding: 12px 14px calc(env(safe-area-inset-bottom, 0px) + 20px);
   z-index: 35;
   box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.6);
 }
@@ -1216,7 +1289,7 @@ onBeforeUnmount(() => {
 .m-immersive-wake-fab {
   position: absolute;
   right: 18px;
-  bottom: 24px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
   z-index: 60;
   display: flex;
   align-items: center;

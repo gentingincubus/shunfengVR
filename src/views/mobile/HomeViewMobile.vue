@@ -1,11 +1,10 @@
 <template>
-  <div class="m-home-container" @touchstart="handleTouchStart" @touchend="handleTouchEnd">
+  <div ref="containerRef" class="m-home-container" @touchstart="handleTouchStart" @touchend="handleTouchEnd">
     <!-- 顶部移动端导航栏 -->
     <transition name="slide-down">
       <header v-show="isShowHeader" class="m-header" :class="{ 'm-header-solid': currentSection > 0 }">
         <div class="m-header-left">
-          <img src="@/assets/img/head.png" class="m-avatar" alt="avatar" />
-          <span class="m-brand-text">{{ currentSection === 0 ? 'MADE BY GENTING' : '顺峰山VR' }}</span>
+          <span class="m-brand-text">顺峰山VR</span>
         </div>
 
         <nav class="m-nav-group">
@@ -28,14 +27,13 @@
     </transition>
 
     <!-- 主视口翻页容器 -->
-    <div class="m-sections-wrapper" :style="{ transform: `translate3d(0, -${currentSection * 100}vh, 0)` }">
+    <div class="m-sections-wrapper" :style="{ transform: `translate3d(0, -${currentSection * 100}%, 0)` }">
       <!-- 区域 1：首屏巨幕宣传 -->
       <section class="m-section m-area-1">
         <div class="m-hero-content">
           <div class="m-hero-badge">720° SPATIAL PANORAMA</div>
           <h1 class="m-hero-title">顺峰山公园</h1>
           <h2 class="m-hero-subtitle">顺峰揽胜 · 岭南名园</h2>
-          <p class="m-hero-desc">沉浸式数字导览 · 探索顺德青云双塔与碧波胜景</p>
 
           <div class="m-hero-actions">
             <button class="m-hero-btn primary" @click="enterVrDirectly">
@@ -181,22 +179,25 @@
       </section>
     </div>
 
-    <!-- 底部固定浮动快速进入 VR 悬浮胶囊 -->
-    <div class="m-floating-vr-fab" @click="enterVrDirectly" title="即刻漫游">
-      <el-icon :size="18"><Compass /></el-icon>
-      <span>720° VR</span>
-    </div>
+    <!-- 底部固定浮动快速进入 VR 悬浮胶囊 (仅在首屏显示，避免在卡片屏遮挡内容) -->
+    <transition name="fade">
+      <div v-show="currentSection === 0" class="m-floating-vr-fab" @click="enterVrDirectly" title="即刻漫游">
+        <el-icon :size="18"><Compass /></el-icon>
+        <span>720° VR</span>
+      </div>
+    </transition>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { Compass, ArrowDown, ArrowLeft, ArrowRight, Refresh, PictureFilled } from '@element-plus/icons-vue'
 import { carouselApi } from '@/api/carousel'
 import ParseText from '@/components/md-editor-v3/parseText.vue'
 
 const router = useRouter()
+const containerRef = ref(null)
 
 // 导航与分屏滚动控制
 const currentSection = ref(0)
@@ -309,8 +310,25 @@ function goToVrWithMap(code) {
   router.push({ path: '/m/vr', query: { code } })
 }
 
+function handleTouchMove(e) {
+  // 如果用户正在卡片背面的富文本长内容区滚动，允许局部内部滚动；其余全屏手势一律阻止默认行为，防止浏览器下拉刷新
+  const isBackScroll = e.target && e.target.closest && e.target.closest('.m-back-content')
+  if (!isBackScroll && e.cancelable) {
+    e.preventDefault()
+  }
+}
+
 onMounted(() => {
   loadCarousel()
+  if (containerRef.value) {
+    containerRef.value.addEventListener('touchmove', handleTouchMove, { passive: false })
+  }
+})
+
+onBeforeUnmount(() => {
+  if (containerRef.value) {
+    containerRef.value.removeEventListener('touchmove', handleTouchMove)
+  }
 })
 </script>
 
@@ -320,7 +338,11 @@ onMounted(() => {
   inset: 0;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
+  touch-action: pan-x;
   background: #000;
   color: #fff;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
@@ -353,20 +375,12 @@ onMounted(() => {
 .m-header-left {
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-
-.m-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 1.5px solid #38bdf8;
 }
 
 .m-brand-text {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.8px;
   color: #f8fafc;
 }
 
@@ -422,6 +436,7 @@ onMounted(() => {
   position: relative;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   box-sizing: border-box;
 }
 
@@ -436,12 +451,13 @@ onMounted(() => {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  padding: 60px 20px 40px;
+  padding: 56px 20px calc(env(safe-area-inset-bottom, 0px) + 20px);
 }
 
 .m-hero-content {
   text-align: center;
-  max-width: 90%;
+  width: 100%;
+  max-width: 96%;
 }
 
 .m-hero-badge {
@@ -458,30 +474,24 @@ onMounted(() => {
 }
 
 .m-hero-title {
-  font-size: clamp(38px, 12vw, 56px);
+  font-size: clamp(40px, 13.5vw, 62px);
   font-weight: 900;
-  letter-spacing: 3px;
-  margin: 0 0 10px 0;
+  letter-spacing: 2px;
+  margin: 0 0 14px 0;
   color: #fff;
-  text-shadow: 0 4px 16px rgba(0, 0, 0, 0.8);
+  text-shadow: 0 4px 20px rgba(0, 0, 0, 0.9);
   font-family: 'FZZJ-HYJTJF', sans-serif;
+  line-height: 1.15;
+  white-space: nowrap;
 }
 
 .m-hero-subtitle {
-  font-size: clamp(20px, 6.5vw, 28px);
+  font-size: clamp(22px, 7vw, 32px);
   font-weight: 700;
   letter-spacing: 2px;
   color: #f1f5f9;
-  margin: 0 0 16px 0;
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
-}
-
-.m-hero-desc {
-  font-size: 13px;
-  color: #cbd5e1;
-  margin: 0 0 32px 0;
-  line-height: 1.5;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+  margin: 0 0 36px 0;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
 }
 
 .m-hero-actions {
@@ -556,20 +566,22 @@ onMounted(() => {
   background: radial-gradient(circle at 50% 30%, #1e1b4b 0%, #0f172a 100%);
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  padding: 60px 16px 30px;
+  justify-content: space-between;
+  padding: 56px 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
+  box-sizing: border-box;
 }
 
 .m-carousel-container {
   display: flex;
   flex-direction: column;
   height: 100%;
-  justify-content: center;
+  justify-content: space-between;
 }
 
 .m-section-header {
   text-align: center;
-  margin-bottom: 16px;
+  margin-bottom: 6px;
+  flex-shrink: 0;
 }
 
 .m-sec-tag {
@@ -580,14 +592,14 @@ onMounted(() => {
 }
 
 .m-sec-title {
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 800;
-  margin: 4px 0;
+  margin: 3px 0;
   color: #f8fafc;
 }
 
 .m-sec-sub {
-  font-size: 12px;
+  font-size: 11px;
   color: #94a3b8;
   margin: 0;
 }
@@ -597,14 +609,18 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 0;
 }
 
 .m-card-flipper {
   position: relative;
   width: 90vw;
   max-width: 360px;
-  height: 52vh;
-  min-height: 320px;
+  height: calc(100dvh - 240px);
+  max-height: 420px;
+  min-height: 250px;
   transform-style: preserve-3d;
   transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
@@ -749,11 +765,13 @@ onMounted(() => {
 }
 
 .m-carousel-ctrls {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 16px;
-  margin-top: 14px;
+  margin-top: 8px;
+  margin-bottom: 2px;
 }
 
 .m-ctrl-arrow {
@@ -800,7 +818,8 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 60px 16px 40px;
+  padding: 56px 16px calc(env(safe-area-inset-bottom, 0px) + 24px);
+  box-sizing: border-box;
 }
 
 .m-map-section-content {
@@ -899,7 +918,7 @@ onMounted(() => {
 .m-floating-vr-fab {
   position: fixed;
   right: 18px;
-  bottom: 24px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 22px);
   z-index: 90;
   display: flex;
   align-items: center;
