@@ -241,6 +241,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import * as TWEEN from '@tweenjs/tween.js'
 import { vrApi } from '@/api/vr'
 import { createNadirPatchMesh } from '@/utils/nadirPatch'
+import { VrTileLoader } from '@/utils/vrTileLoader'
 import {
   Headset,
   MapLocation,
@@ -295,6 +296,7 @@ let textureLoader = null
 let animFrameId = null
 let currentSphere = null
 let nadirMesh = null
+let tileLoader = null
 let bgmAudio = null
 let isTransitioning = false
 let currentLoadToken = 0
@@ -411,6 +413,9 @@ function initThree(initialScene) {
 
   textureLoader = new THREE.TextureLoader()
 
+  // 🌟 初始化移动端立方体多分辨率瓦片动态加载引擎 (限制最大并发 4 保持移动端网络流畅)
+  tileLoader = new VrTileLoader(scene, { radius: 39.5, maxConcurrent: 4 })
+
   window.addEventListener('resize', onWindowResize)
 
   switchScene(initialScene, true)
@@ -457,8 +462,8 @@ function setupNadirPatch() {
   const borderColor = sceneCfg.nadirBorderColor || categoryCfg.nadirBorderColor || '#38bdf8'
   const imageUrl = sceneCfg.nadirImageUrl || categoryCfg.nadirImageUrl || null
 
-  // 移动端全景球半径为 50，默认补地遮罩圆盘半径扩大到 18（彻底遮严实三脚架），并支持动态配置
-  const patchRadius = Number(sceneCfg.nadirRadius || categoryCfg.nadirRadius || 18)
+  // 移动端全景球半径为 40，默认补地遮罩圆盘半径扩大到 16（彻底遮严实三脚架），并支持动态配置
+  const patchRadius = Number(sceneCfg.nadirRadius || categoryCfg.nadirRadius || 16)
 
   nadirMesh = createNadirPatchMesh({
     type,
@@ -469,7 +474,7 @@ function setupNadirPatch() {
     textColor,
     borderColor,
     imageUrl
-  }, 50, patchRadius)
+  }, 40, patchRadius)
 
   scene.add(nadirMesh)
 }
@@ -491,6 +496,11 @@ function switchScene(targetScene, isInitial = false) {
 
   currentScene.value = targetScene
 
+  // 切换场景前清理旧场景瓦片
+  if (tileLoader) {
+    tileLoader.clear()
+  }
+
   const token = ++currentLoadToken
   const hasLowRes = Boolean(targetScene.lowResUrl)
   const initialUrl = hasLowRes ? targetScene.lowResUrl : targetScene.panoramaUrl
@@ -507,22 +517,30 @@ function switchScene(targetScene, isInitial = false) {
       texture.colorSpace = THREE.SRGBColorSpace
       texture.minFilter = THREE.LinearFilter
 
-      const geometry = new THREE.SphereGeometry(50, 64, 32)
-      geometry.scale(-1, 1, 1)
+      const geometry = new THREE.SphereGeometry(40, 64, 32)
+      geometry.scale(1, 1, -1)
 
       const newMaterial = new THREE.MeshBasicMaterial({
         map: texture,
         transparent: true,
-        opacity: isInitial ? 1 : 0
+        opacity: isInitial ? 1 : 0,
+        depthWrite: false
       })
 
       const nextSphere = new THREE.Mesh(geometry, newMaterial)
+      nextSphere.renderOrder = 0
       scene.add(nextSphere)
 
       if (isInitial) {
         currentSphere = nextSphere
         isTransitioning = false
         loading.value = false
+
+        // 🌟 首屏场景瓦片装载
+        const isTileReady = targetScene.hasTiles === 1 && targetScene.tilePrefix
+        if (isTileReady && tileLoader) {
+          tileLoader.loadScene(targetScene)
+        }
       } else {
         const oldSphere = currentSphere
         loading.value = false
@@ -551,12 +569,19 @@ function switchScene(targetScene, isInitial = false) {
             isTransitioning = false
             // 🌟 场景切换完成，更新当前场景的脚底补地遮罩
             setupNadirPatch()
+
+            // 🌟 新场景淡入完成后挂载多分辨率瓦片
+            const isTileReady = targetScene.hasTiles === 1 && targetScene.tilePrefix
+            if (isTileReady && tileLoader) {
+              tileLoader.loadScene(targetScene)
+            }
           })
           .start()
       }
 
-      // 🌟 阶段 2：若存在低清图，后台异步静默加载 2.9MB 高清原图无缝热替换
-      if (hasLowRes) {
+      // 🌟 阶段 2：若场景未生成瓦片且存在低清图，降级静默加载 2.9MB 高清原图无缝热替换
+      const isTileReady = targetScene.hasTiles === 1 && targetScene.tilePrefix
+      if (!isTileReady && hasLowRes) {
         textureLoader.load(
           targetScene.panoramaUrl,
           (highResTexture) => {
@@ -712,6 +737,9 @@ function animate(time) {
   }
 
   if (renderer && scene && camera) {
+    if (tileLoader) {
+      tileLoader.update(camera)
+    }
     renderer.render(scene, camera)
   }
 }
@@ -741,6 +769,11 @@ onBeforeUnmount(() => {
 
   if (controls) {
     controls.dispose()
+  }
+
+  if (tileLoader) {
+    tileLoader.destroy()
+    tileLoader = null
   }
 
   if (currentSphere) {
