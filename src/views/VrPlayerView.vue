@@ -246,6 +246,7 @@
   import * as TWEEN from '@tweenjs/tween.js'
   import { vrApi } from '@/api/vr'
   import { createNadirPatchMesh } from '@/utils/nadirPatch'
+  import { VrTileLoader } from '@/utils/vrTileLoader'
 
   const route = useRoute()
   const router = useRouter()
@@ -289,6 +290,7 @@
   let animFrameId = null
   let currentSphere = null
   let nadirMesh = null
+  let tileLoader = null
   let bgmAudio = null
   let isTransitioning = false
   let currentLoadToken = 0
@@ -414,6 +416,9 @@
     // 5. 纹理加载管理器
     textureLoader = new THREE.TextureLoader()
 
+    // 🌟 初始化立方体多分辨率瓦片动态加载引擎
+    tileLoader = new VrTileLoader(scene, { radius: 39.5, maxConcurrent: 6 })
+
     // 6. 首个场景全景球体装配 (双阶段渐进式: 低清秒开 -> 高清静默升格)
     currentScene.value = initialScene
     loadSphereMesh(initialScene, () => {
@@ -457,18 +462,25 @@
         const material = new THREE.MeshBasicMaterial({
           map: initialTexture,
           transparent: true,
-          opacity: 1
+          opacity: 1,
+          depthWrite: false
         })
 
         const mesh = new THREE.Mesh(geometry, material)
+        mesh.renderOrder = 0 // 背景全景球置底渲染
         scene.add(mesh)
         currentSphere = mesh
 
         // 🌟 第一阶段完成：秒开贴图就绪，立即解除 loading 遮罩并启动开场飞入动效
         if (onLoadCallback) onLoadCallback()
 
-        // 🌟 第二阶段：若存在低清图，静默拉取高清原图并在当前网格无缝替换贴图
-        if (hasLowRes) {
+        // 🌟 第二阶段：根据场景瓦片就绪状态执行双轨加载策略
+        const isTileReady = targetScene.hasTiles === 1 && targetScene.tilePrefix
+        if (isTileReady && tileLoader) {
+          // 轨道 A：启动多分辨率立方体瓦片按需加载（秒开超清，节省 90% 流量）
+          tileLoader.loadScene(targetScene)
+        } else if (hasLowRes) {
+          // 轨道 B：降级策略 - 后台静默拉取完整高清原图并在当前网格无缝替换贴图
           textureLoader.load(
             targetScene.panoramaUrl,
             (highResTexture) => {
@@ -616,6 +628,11 @@
     sceneSwitching.value = true
     currentScene.value = sceneItem
 
+    // 切换场景前先清理上一场景瓦片，防止穿帮
+    if (tileLoader) {
+      tileLoader.clear()
+    }
+
     const token = ++currentLoadToken
     const hasLowRes = Boolean(sceneItem.lowResUrl)
     const initialUrl = hasLowRes ? sceneItem.lowResUrl : sceneItem.panoramaUrl
@@ -640,10 +657,12 @@
         const newMaterial = new THREE.MeshBasicMaterial({
           map: initialTexture,
           transparent: true,
-          opacity: 0
+          opacity: 0,
+          depthWrite: false
         })
 
         const nextSphere = new THREE.Mesh(geometry, newMaterial)
+        nextSphere.renderOrder = 0
         scene.add(nextSphere)
 
         const oldSphere = currentSphere
@@ -678,11 +697,18 @@
             isTransitioning = false
             // 🌟 场景切换完成，更新当前场景的脚底补地遮罩
             setupNadirPatch()
+
+            // 🌟 场景就绪后挂载多分辨率瓦片
+            const isTileReady = sceneItem.hasTiles === 1 && sceneItem.tilePrefix
+            if (isTileReady && tileLoader) {
+              tileLoader.loadScene(sceneItem)
+            }
           })
           .start()
 
-        // 🌟 阶段 2：若存在低清图，后台异步静默加载 2.9MB 高清原图无缝热替换
-        if (hasLowRes) {
+        // 🌟 阶段 2：若场景未生成瓦片且存在低清图，降级后台异步静默加载 2.9MB 高清原图无缝热替换
+        const isTileReady = sceneItem.hasTiles === 1 && sceneItem.tilePrefix
+        if (!isTileReady && hasLowRes) {
           textureLoader.load(
             sceneItem.panoramaUrl,
             (highResTexture) => {
@@ -849,6 +875,10 @@
 
     // 渲染单帧
     if (renderer && scene && camera) {
+      // 🌟 驱动多分辨率立方体瓦片视锥体可见性检测与按需拉取
+      if (tileLoader) {
+        tileLoader.update(camera)
+      }
       renderer.render(scene, camera)
     }
   }
@@ -887,6 +917,11 @@
     }
 
     // 4. 彻底释放 GPU 显存
+    if (tileLoader) {
+      tileLoader.destroy()
+      tileLoader = null
+    }
+
     if (currentSphere) {
       currentSphere.geometry.dispose()
       if (currentSphere.material.map) {
